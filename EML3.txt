@@ -1,0 +1,42 @@
+
+An operator set was deemed “complete” if it could reconstruct all primitives from Table 1, on the real axis where appropriate. This includes trigonometric functions and their inverses (sin, cos, tan, arcsin, …), hyperbolic functions and their inverses (sinh, cosh, tanh, arsinh, …), algebraic operations ($\sqrt{\cdot}$, reciprocal, …), and fundamental constants ($\pi, e, i, -1, 0, 1, 2, \dots$).
+
+The challenge of executing such a test is illustrated by the following simple exercise from rational functions generation, attributed to [35]. Given only the three operations: suc$(x) = x+1$ (successor), pre$(x) = x-1$ (predecessor), and inv$(x) = 1/x$ (reciprocal/inverse), let us compute negation, i.e., $-x$. The non-obvious solution is:
+
+$$ \text{suc}(\text{inv}(\text{pre}(\text{inv}(\text{suc}(\text{inv}(x)))))) = \frac{1}{\frac{1}{x+1} - 1} + 1 = -x. $$
+
+This exemplifies the formulas expected to be encountered in our search: nested expressions with depth 5-9 that defy intuitive construction. There is no regular method to find them
+
+<page_number>6</page_number>
+Page 7
+
+automatically, except for (human-assisted) brute-force search, nowadays also enhanced using AI [36].
+
+Direct symbolic verification proved computationally intractable. Typical Kolmogorov-style complexity $K$ [37] is usually $K \lesssim 7$. In practice it was searched up to $K = 9$. Here $K$ denotes the length of a Reverse Polish Notation (RPN) calculator program, equivalent to a formula. To speed up the search I developed a hybrid numeric bootstrapping verification approach, working as follows. We test whether a target operation, e.g. hypotenuse $\sqrt{x^2 + y^2}$, can be expressed using a given operator set. Instead of symbolic manipulation on $x, y$, I substituted for $x$ and $y$ algebraically independent (not in exp-log class) transcendental constants, such as e.g., $x = \gamma \simeq 0.577216$ (Euler-Mascheroni constant), $y = A \simeq 1.28243$ (Glaisher-Kinkelin constant). Then, $\sqrt{\gamma^2 + A^2}$ was evaluated numerically, and compared to all expressions generated from 1 and (3). This method follows from the simple observation that any generally valid formula must also be valid at a single point. Under the Schanuel conjecture [38], coincidental equality between such expressions is vanishingly unlikely, making this a reliable sieve for formula equivalence candidates. In practice, I compute the double-precision numerical value of the operator sought, and then run constant recognition software (“inverse symbolic calculator”) on this result, which returns a candidate formula in the form of RPN calculator code [39] or as an expression tree, depending on the variant of the method used. The search procedure is heuristic and serves only to exclude evidently false formulas and discover candidate witnesses; independent verification is separate and is given in Supplementary Information (Part II), which provides symbolic checks, numerical cross-validation, and a constructive completeness proof sketch for the Table 1 class.
+
+In detail, the search procedure worked as follows. Rather than searching for all elementary operations (Table 1) directly in pure EML form (which remains computationally infeasible even numerically), I employed iterative bootstrapping:
+
+    Start with two lists:
+        set of constants, functions and operators to be verified for robustness, e.g. $S_0 = {1, \text{eml}}$
+        set of constants, functions and operators to be computed, e.g., $C_0 = {\pi, e, i, -1, \dots \exp, \ln, \dots, +, \dots}$, cf. Table 1. The list $C_0$ also defines what I mean by 'computing all elementary functions'.
+
+    Search for a expression computing some element from the list $C_i$ using only primitives from the list $S_i$.
+
+    If one is found, move it from list $C_i$ to list $S_{i+1}$. In the EML example, the first result found is the formula for $e = \text{eml}(1, 1)$. After the first step, the lists become $S_1 = S_0 \cup {e} = {1, \text{eml}, e}$, $C_1 = C_0 \setminus {e} = {\pi, i, -1, \dots \exp, \ln, \dots, +, -, \times, \dots}$.
+
+    Repeat steps 2-3 until all primitives from initial list $C_0$ are reconstructed, i.e. until $C_i$ becomes empty: $C_i = \emptyset$.
+
+The verification procedure, VerifyBaseSet, was implemented using my own Mathematica SymbolicRegression package [39]. A version that is three orders of magnitude faster was
+
+<page_number>7</page_number>
+Page 8
+
+recently translated by GPT Codex 5.3 into Rust [39], allowing for re-check of EML in seconds, rather than hours.
+
+The ablation process, i.e. running above search with some of the elements from Table 1 removed, yielded progressively smaller calculator configurations (named Calc 3, 2, 1, 0 in Table 2), each requiring different primitives, constants in particular. Some configurations could generate required constants from arbitrary input on their own (via operations like $x-x=0, e^0=1, 0-1=-1, \dots$ in Calc 2), while others required specific constants (e.g., Calc 1 requires $e$ or $\pi$, Wolfram requires $i$, cf. footnote in Table 2). Then the search stalled, and it became evident that the continuous Sheffer operator, if it exists, is not among the familiar named functions. For the final reduction, I began, guided by intuition gathered over many experiments, to enumerate elementary binary functions as candidate single operators, paired with similarly generated constants. Each candidate pair ${\text{constant, operator}}$ was tested using the VerifyBaseSet procedure. This, after numerous failures, and a few discarded false-positives, revealed that the eml$(x, y)$, given by (3), paired with the constant 1, forms a complete basis for reconstructing the elementary functions. Later I realized that EML is not unique, discovering its close cousins: EDL (requiring constant $e$) and a third variant using $-\infty$ as a terminal symbol. Details are the subject of the next section.
+3 Results
+
+Table 2 presents the complete reduction sequence, in historical order. Each configuration represents a complete 'scientific calculator' capable of computing every expression built from the primitives listed in Table 1. Calc 3 (Table 2, 3rd row) was first to dethrone Wolfram Language primitives set (Table 2, 2nd row) by retaining negation and reciprocal alongside exp, ln, and addition. This system of 6 primitives is able to generate constants on its own via $x+(-x)=0$, etc. Calc 2 achieved what Calc 3 does using only exp, ln and subtraction, while still preserving ability to generate constants on its own. The non-commutative operator (subtraction) proved crucial, as it provides both expression-tree growth and inversion capabilities.
+
+Calc 1 represents a fundamentally different, top-down approach, using binary exponentiation (a rank-3 hyper-operation) and its inverse (binary logarithm) as base operators instead of lower-rank operations such as addition and subtraction. This configuration works with $e$ or $\pi$ as the terminal constant. Despite extensive searches, no other constant was found for which Calc 1 works.
+

@@ -1,0 +1,71 @@
+ As a bottom line I stress that all the above difficulties (edge cases) are not much different from those usually encountered in every kind of floating-point or symbolic computation. EML compiler is available for testing under EML_toolkit/EmL_compiler subdir of [39]; see also Supplementary Information, Sect. 4. Software and reproducibility.
+4.2 Elementary functions as binary trees and analog circuits
+
+Noteworthy, in EML notation, any elementary function expression tree is binary. The context-free grammar is trivial: $S \to 1 \mid eml(S, S)$. For functions, input variables are added
+
+<page_number>11</page_number>
+Page 12
+
+as additional terminal symbols (e.g. $x$ in the univariate case). This has many practical advantages over standard methods.
+
+Some simple examples of tree/circuit representations are shown in Fig. 2. The examples shown are natural logarithm, identity, negation minus($x$) = $-x$, reciprocal inv($x$) = $1/x$, and multiplication. Ability to compute the identity function using an EML tree of depth 4 allows some input variables to be moved down the tree (see next Subsection). Other elementary functions, e.g. trigonometric ones, have trees too large to be shown in print, cf. Table 4.
+
+Table 3: EML Sheffer as a new kind of basic building block for symbolic and analog computations. Dot marks output, and, as (3) is non-commutative, arrow determine chirality and operation order. First counterclockwise input after dot is exp $x$, then ln $y$, and dot EML "perform" subtraction. In Fig. 2 we keep this convention to avoid confusion, but clockwise variant is valid as well. I'm following habits of OpAmp symbol usage here.
+NAND gate	Op-Amp	Transistor	EML Sheffer
+<img>NAND gate symbol</img>	<img>Op-Amp symbol</img>	<img>Transistor symbol</img>	<img>EML Sheffer symbol</img>
+
+Circuits using EML operator as a new element (Table 3) might be useful for analog computing [8]. One of the old problems in this field is construction of predefined multivariate elementary functions [43]. Using EML compiler (Sect. 4.1), we can convert any expression (Fig. 2) to such a circuit, with the topology of a binary tree. EML tree provides a uniform treatment of generic elementary functions.
+4.3 Symbolic Regression by continuous optimization
+
+Modern symbolic regression (SR) methods [9, 10, 44] aim to discover closed-form expressions from data, but they typically search over heterogeneous grammars involving many distinct operators. Knowledge of a single operator, (3), which is sufficient to compute any elementary function, allows us to create a multiparameter "master" formula. Such a master formula, easily constructed in EML form due to binary expression tree, for some combinations of its parameters, is equivalent to elementary functions. By construction, such a general tree includes all possible formulas up to the given leaf count (tree depth). These trees are big by the standards of a typical mathematical analysis course, but small compared to what is in use in modern AI. For example, a full binary tree of depth $n$ has a total of $2^n - 1$ branches and $2^n$ leaves. For the largest transformers with trillions ($10^{12}$) of parameters, the equivalent tree would have a depth of 40. The large values in Table 4 reflect the unoptimized prototype EML compiler (Subsect. 4.1); direct exhaustive search yields substantially shorter expressions, as the rightmost column demonstrates.
+
+The master formula can be constructed as follows. For simplicity we present the univariate case; the construction extends to an arbitrary number of input variables. Both inputs to
+
+<page_number>12</page_number>
+Page 13
+
+Table 4: Complexity of various functions in EML tree representation. EML Compiler column gives RPN code length $K$ for expressions generated from EML compiler. The value of $K$ of EML formula can be computed using e.g. Mathematica LeafCount. For the identity function $x$, the compiler returns $x$ directly (leaf count 1); the shortest non-trivial EML expression have leaf count 9. Last column show results of direct exhaustive search for shortest expressions. Numbers in parentheses show length of formulas which do not use the extended reals ($\pm\infty$ in floating-point). If search timed out, reached lower limit for $K$ is given.
+Constant	EML Compiler	Direct search
+1	1	1 (1)
+0	7	7 (7)
+-1	17	15 (17)
+2	27	19 (19)
+-2	43	27 (27)
+1/2	91	29 (35)
+-1/2	107	31 (37)
+2/3	143	39 (39)
+-2/3	159	45 (47)
+$\sqrt{2}$	165	>47
+$i$	131	>55
+$e$	3	3
+$\pi$	193	>53
+Function	EML Compiler	Direct search
+$x$	1	9
+$e^x$	3	3
+$\ln x$	7	7
+$-x$	57	15
+$\frac{1}{x}$	65	15
+$x-1$	43	11
+$x+1$	27	19
+$x/2$	131	27
+$2x$	131	19
+$\sqrt{x}$	139	43 $\geq$? >35
+$x^2$	75	17
+Operator	EML Compiler	Direct search
+$x-y$	83	11 (11)
+$x+y$	27	19 (19)
+$x \times y$	41	17 (17)
+$x/y$	105	17 (17)
+$x^y$	49	25
+$\log_x y$	117	29
+$(x+y)/2$	287	>27
+$x^2+y^2$	175	>27
+
+<page_number>13</page_number>
+Page 14
+
+eml $(x, y)$ can be: either 1, input variable $x$, or the result from the previous eml, which we denote $f$. Let us represent such a general input by a linear combination $$ \alpha_i + \beta_i x + \gamma_i f. \quad (6) $$ Now, setting specific values, we can recover all three cases
+
+    1, for $\alpha_i = 1, \beta_i = 0, \gamma_i = 0$,
+    x, for $\alpha_i = 0, \beta_i = 1, \gamma_i = 0$,
+    f, for $\alpha_i = 0, \beta_i = 0, \gamma_i = 1$. At lowest tree level (leaves), there are only 1 and x, so there are no parameters $\gamma_i$. As an example, I present full level-2 master formula $$ F(x) = \text{eml} \left[ \alpha_1 + \beta_1 x + \gamma_1 \text{eml} (\alpha_3 + \beta_3 x, \alpha_4 + \beta_4 x), \right. $$ $$ \left. \alpha_2 + \beta_2 x + \gamma_2 \text{eml} (\alpha_5 + \beta_5 x, \alpha_6 + \beta_6 x) \right]. $$ If we set $\alpha_1 = 0, \beta_1 = 1, \gamma_1 = 0$ and $\alpha_2 = 1, \beta_2 = \gamma_2 = 0$, we recover $\exp(x)$. Using $\alpha_1 = \alpha_2 = 1$ and all $\beta_i = \gamma_i = 0$ we get the constant $e$. Setting $\alpha_1 = \beta_1 = 0, \gamma_1 = 1, \alpha_2 = 1, \beta_2 = \gamma_2 = 0, \alpha_3 = 0, \beta_3 = 1, \gamma_3 = 0$ and $\alpha_4 = 1, \beta_4 = \gamma_4 = 0$, we obtain double exponential $\exp(e^x)$. The total number of parameters for the level-2 master formula is 14. In general, the level-$n$ master formula has $5 \times 2^n - 6$ parameters, see Supplementary Information, Part III. While one could, in principle, create such a master formula using more usual elementary functions (+,-,/,**, sin, cos, ..., etc.), it would be ridiculously complicated and would lack any regular structure. Moreover, in practical SR one typically works with a reduced subset of operations, running the risk that the chosen set is incomplete, i.e., unable to express all elementary functions. The EML master formula is complete by design. Number of parameters in (6) can be reduced to two using some switch function. Or, alternatively, in a more modern approach, one can treat parameters $\alpha_i, \beta_i, \gamma_i$ as logits, and pass them through softmax function [45] to convert them into probabilities normalized to $\alpha_i + \beta_i + \gamma_i = 1$. In two examples below, I'll use both methods.

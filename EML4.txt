@@ -1,0 +1,51 @@
+
+Calc 0 absorbs the constant $e$ into the exp function itself, reducing the system to 3 primitives. This configuration strongly suggested that a single binary operator might exist at all, motivating further search.
+
+The final reduction to EML was achieved by recognizing a pattern: all minimal configurations involve pairs of inverse functions (including self-inverses) and non-commutative operations. Testing combinations of inverse functions at the input with asymmetric operations at the output yielded the first continuous sufficient operator. A month later I realized
+
+<page_number>8</page_number>
+Page 9
+
+Table 2: Progressive reduction from 36-button scientific calculator from Table 1 to the EML Sheffer operator. Calc 3, 2 and 0 accept any real constant or variable as input, generating all required values internally. The count-down column tallies all distinct primitives including one input variable; for systems marked "none" under Constants, any real value serves as the starting input. Wolfram Mathematica primitives are given for reference. Last lines are placeholders for speculated undiscovered primitives. The penultimate row is for a binary operator, hypothesized to generate, unlike EML, constants from arbitrary input. The last row is for a unary operator, which retains all good properties of well-tested activation functions in neural nets, while allowing for exact evaluation of elementary functions when combined with standard "matrix" arithmetic.
+	Constants	Unary	Binary	Count-down
+Base-36	cf. Table 1	cf. Table 1	cf. Table 1	36
+Wolfram*	$\pi, e, i$	ln	$+, \times, \wedge$	7
+Calc 3	none	$\exp, \ln, -x, 1/x$	$+$	6
+Calc 2	none	$\exp, \ln$	$-$	4
+Calc 1	$e$ or $\pi$	none	$x^y, \log_x y$	4
+Calc 0	none	$\exp$	$\log_x y$	3
+EML	1	none	$\text{eml}(x, y)$	3
+?	none	none	?	2
+?	none	?	$+, -, \times$	5
+
+*The imaginary unit alone is sufficient: $-1 = i \times i$, $1 = -1 \times (-1)$, $0 = -1 + 1$. $\pi = -1 \times i \times \ln(-1)$, $e = (-1)^{(i\pi)^{(-1)}}$.
+
+<page_number>9</page_number>
+Page 10
+
+that it has at least two additional cousins: EDL and -EML: $$ \begin{aligned} \text{eml}(x, y) &= \exp(x) - \ln(y) & \text{with constant } 1, & \quad (4a) \ \text{edl}(x, y) &= \exp(x) / \ln(y) & \text{with constant } e, & \quad (4b) \ -\text{eml}(y, x) &= \ln(x) - \exp(y) & \text{with constant } -\infty. & \quad (4c) \end{aligned} $$ The first successful discovery search run (cf. Fig. 1) can be replicated with this 3-line Mathematica code:
+
+Import["SymbolicRegression.m"]
+EML[x_, y_] := Exp[x] - Log[y]
+VerifyBaseSet[{1}, {}, {EML}]
+
+where the package can also be imported directly from the repository [39]. Depending on computer speed, usually in less than an hour, the above procedure re-generates all 36 elementary operations from Table 1. For example, the natural logarithm becomes: $$ \ln(z) = \text{eml}(1, \text{eml}[\text{eml}(1, z), 1]), \quad (5) $$ and so on. The resulting EML expressions range from depth 1 (exponential, $e^x = \text{eml}(x, 1)$) to depth 8 (multiplication), with most basic math functions requiring larger depths (Table 4). A much faster and more thorough test (multiple real transcendentals, both positive and negative, arbitrary-precision check) is provided by a Rust re-implementation of VerifyBaseSet [39], rust_verify.
+
+The exhaustive search served only to discover candidate identities. Their verification is deferred to Supplementary Information, Part II, which contains symbolic simplification of the full discovery chain (Fig. 1) in Wolfram Mathematica [33], independent numerical cross-checks across four implementations (C, NumPy, PyTorch, and mpmath), and a constructive completeness proof sketch.
+4 Usage and applications
+
+The uniform tree structure of EML expressions suggests several directions for implementation and application.
+4.1 EML compiler
+
+The output of the VerifyBaseSet procedure provides the data (see Fig. 1) required to reconstruct any primitive or composite elementary expression in terms of EML Sheffer, (4a). I provide a prototype EML compiler, coded in Python, that converts formulas into pure EML form. An EML expression can be evaluated symbolically in Mathematica, or numerically in any IEEE754-compliant language. Pure EML form could also be executed on hardware (or an emulated machine) that has only a single instruction: the EML itself. In particular, the EML code can be executed on a single instruction stack machine, closely resembling a single-button RPN calculator. Pure-EML form could possibly be implemented efficiently in FPGA or analog circuits.
+
+<page_number>10</page_number>
+Page 11
+
+The simplest input-output example is provided by the $\ln x$ function. After compilation to EML form, we expect to obtain (5), although the simplest possible form is not expected in general. The equivalent RPN code for $\ln$ is a sequence of $K = 7$ instructions $$1, 1, x, eml, 1, eml, eml,$$ or, denoting $eml \to E$, as the RPN string $11xE1EE$. For the expression tree, see Fig. 2 (on top).
+
+A few comments on the implementation are required. EML-compiled expressions work on the real axis, both positive and negative, except for a few isolated points, especially at zero and domain endpoints. Internal computations, for trigonometric functions in particular, must be done in the complex domain. Because the simplest form of the natural logarithm, (5), obtained from EML, (3), is equivalent to $$\ln z = e - \log\left(\frac{e^e}{z}\right),$$ using the standard choice of principal branch for complex logarithm, we obtain a jump of $2\pi i$ for the negative real axis, due to the $1/z$ term. This prevents use of e.g. some standard formulas for $i$, relying on $\ln(-1) = i\pi$, for which we get the wrong sign. A solution working for all real $x \neq 0$ is to redefine the branch for EML itself in such a way that $\ln z$ (and everything derived from it, cf. Fig. 1) follows standard implementation of principal branch. Another option, used in EML compiler, is to manually correct $i$ sign.
+
+EML-compiled formulas work flawlessly in symbolic Mathematica and IEEE754 floating-point, e.g. <math.h> in C. This is because some formulas internally might rely on the following properties of extended reals: $$\ln 0 = -\infty, \quad e^{-\infty} = 0.$$
+
+These are properly implemented in Mathematica using symbolic processing, and in floating point using inf and signed zeros. But EML expressions in general do not work 'out of the box' in, e.g., pure Python/Julia or numerical Mathematica. In the first case, this is because special floats are trapped and raise errors. However, EML works in NumPy [40] and PyTorch [41]. In Mathematica, we have an automatically extensible range of floats leading to Overflow[]. Interestingly, the Lean 4 proof assistant [42] takes a different approach. Because Lean requires all functions to be total, it assigns the complex logarithm at zero a default “junk value” (Complex.log 0 = 0), causing the straightforward formalization of the EML chain to fail. 
