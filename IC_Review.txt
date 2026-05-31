@@ -1,0 +1,211 @@
+The **Interaction Calculus (IC)** is a minimal term rewriting system inspired by the Lambda Calculus but with crucial differences that make it more efficient and expressive ¹. In particular, it has the following defining properties ²:
+
+1.  **Affine Variable Usage:** Each variable is *affine*, meaning it can occur at most once in a valid term (no duplication of free variables) ².
+2.  **Global Scope for Variables:** Variables are *global* in scope – a lambda's bound variable may appear anywhere in the program, not just in a lexical sub-block ². This means λ-terms have no traditional scope boundaries; substitutions can apply globally.
+3.  **Superposition & Duplication Primitives:** IC introduces first-class *superposition* and *duplication* constructs, denoted by special nodes ( &lt;img&gt;& symbol&lt;/img&gt; and &lt;img&gt;!& symbol&lt;/img&gt; respectively). These allow one term to split into two (duplication) and two terms to be merged into one (superposition) ³. This provides native support for concepts like continuations, optimal sharing of computations, and implicit *copying* of terms, which are not directly representable in the pure λ-calculus.
+
+Combined, these features enable IC to perform **optimal beta-reduction** (avoiding duplicate work) and guarantee that every possible interaction of nodes has a well-defined rewrite rule (no “stuck” runtime errors) ⁴. Being affine also simplifies garbage collection and parallel evaluation, as no term needs copying more than once ⁵.
+
+## Syntax of Terms
+
+**IC Terms:** The formal syntax of IC terms is given by the grammar below (in BNF-style) ⁶ ⁷:
+
+```mermaid
+grammar Term;
+Term ::= VAR: Name -- Variable
+        | ERA: "*" -- Erasure (empty term)
+        | LAM: "λ" Name "." Term -- Lambda abstraction
+        | APP: "(" Term " " Term ")" -- Application
+        | SUP: "&" Label "{" Term "," Term "}" -- Superposition (pair-like)
+        | DUP: "!" & Label "{" Name "," Name "}" = Term ; Term -- Duplication (destructuring a superposition)
+        | NUM: Number -- Numeric literal (optional extension)
+        | SUC: "+" Term -- Successor (optional extension)
+```
+
+
+
+---
+
+
+## Page 2
+
+mermaid
+graph TD
+    A[SWI: "?" Term "{" "0":Term; "+" :Term; "}"]
+    B[-- Switch (case analysis on zero/successor)]
+```
+
+Each production is annotated with an informal description after the `--` for clarity. In particular 8:
+
+*   **VAR** represents a variable (identified by some Name). Because of affinity, each variable name appears at most once in any term.
+*   **ERA** (`*`) is an *erasure marker*, representing a term that has been erased (used when a term is not needed).
+*   **LAM** (`λx.T`) is a lambda abstraction binding variable `x` in body `T`. (All lambdas are *curried* as in the λ-calculus 9.)
+*   **APP** (`( F A )`) is a function application of term `F` to argument `A`.
+*   **SUP** (`&L{T₁, T₂}`) is a *superposition* node (like an unordered pair) carrying a numeric *label* `L`. It contains two subterms `T₁` and `T₂` that conceptually occupy the same “position” in the term 10. The label `L` is an integer that distinguishes different superpositions and influences certain rules (see **DUP-SUP** below) 11.
+*   **DUP** (`(! &L{x,y} = U; K)`) is a *duplication* node (pronounced “let” in analogy to let-binding). It takes a superposition (with label `L`) and *destructures* it by binding its two components to fresh names `x` and `y`. Here `U` is the value being duplicated (it must evaluate to a superposition with label `L`), and `K` is the continuation term (the scope in which the two new names `x` and `y` can be used) 12 13. Intuitively, `!&L{x,y} = U; K` means “let `(x,y)` be the two parts of the superposition `U` (which has label L) in term `K`”. This construct is what *copies* a term (by allocating it into two placeholders `x` and `y`).
+*   **NUM** is a numeric constant (an unsigned integer literal) – **not essential to the core theory** but included in the VictorTaelin repository’s language for convenience 14.
+*   **SUC** (`+T`) is a successor node (essentially representing the operation of adding 1 to a number `T`). This is also a convenience extension related to numeric terms.
+*   **SWI** (`?N{0: T₀; +: T₊;}`) is a *switch* or case-analysis node on a numeric term `N`. It has two branches: `T₀` for the zero case, and `T₊` for the successor case. This allows pattern matching on numbers (0 vs nonzero) as a primitive. Like **NUM** and **SUC**, **SWI** is an optional extension in the IC syntax for convenience.
+
+**Difference between Repositories – Syntax:** The core syntax (**VAR, ERA, LAM, APP, SUP, DUP**) is common to both the original Interaction Calculus repo and the HVM3 IC specification 6. The **numeric constructs** (**NUM, SUC, SWI**) are defined in the Interaction-Calculus repository as part of the term language (to support unboxed integers and simple pattern matching) 15. In the HVM3 repository’s documentation, these constructs are not included in the *core IC.md* specification – they are instead regarded as *pragmatic extensions* provided by the HVM runtime/language layer 16. In other words, Victor Taelin’s repo treats **NUM, SUC, SWI** as built-in conveniences for the calculus, whereas HVM3’s “IC” focuses on the minimal calculus and handles numbers in the extended HVM language 17.
+
+## Core Reduction Rules (Interactions)
+
+Computation in the Interaction Calculus is governed by a set of **rewrite rules** (often called *interaction rules*) that specify how certain constructor combinations reduce. Each rule is presented in a format reminiscent of
+
+
+
+---
+
+
+## Page 3
+
+inference rules or equation schemas, with a pattern above the line and its reduction result below. We list the **core interaction rules** of IC here, using the names given in the literature ¹⁸ ¹¹:
+
+```
+(*   a)
+----- APP-ERA
+*
+
+(λx. f   a)
+---------- APP-LAM
+x <- a
+f
+
+(&L{a,b}   c)
+------------- APP-SUP
+! &L{c0,c1} = c;
+&L{ (a c0), (b c1) }
+
+! &L{r,s} = *;
+K
+---------- DUP-ERA
+r <- *
+s <- *
+K
+
+! &L{r,s} = λx. f;
+K
+---------- DUP-LAM
+r <- λx0. f0
+s <- λx1. f1
+x <- &L{x0,x1}
+! &L{f0,f1} = f;
+K
+
+! &L{x,y} = &L{a,b};
+K
+---------- DUP-SUP (labels equal)
+x <- a
+y <- b
+K
+
+! &L{x,y} = &R{a,b};
+K
+---------- DUP-SUP (labels differ)
+x <- &R{a0,b0}
+y <- &R{a1,b1}
+! &L{a0,a1} = a;
+```
+
+
+
+---
+
+
+## Page 4
+
+mermaid
+    A[! &L{b0,b1} = b; K]
+```
+
+Each rule's name (to the right of the horizontal bar) indicates the situation:
+
+*   **APP-ERA**: An application where the function part is an erasure `*` simply evaluates to `*` (the argument is discarded). In rule form: `( * a ) -> *`.
+*   **APP-LAM**: An application of a lambda to an argument triggers a β-reduction. The lambda's parameter `x` is substituted by the argument `a` in the body `f`. Formally: `(λx. f a) -> (x <- a; f)`, meaning replace `x` with `a` in `f`. The notation `x <- a` above the line denotes this substitution (see Substitution below).
+*   **APP-SUP**: Applying a superposition `&L{a,b}` to some argument `c` will duplicate the argument `c` and apply each copy to each branch `a` and `b`. The rule introduces a new duplication: `! &L{c0,c1} = c; ...` which splits the argument `c` into two fresh copies (bound as `c0` and `c1`) for use in the two branches. The result is a superposition of the two applications `a c0` and `b c1` under the same label `L`. In effect:'&L{a,b} c)''&L{c0,c1} = c; &L{(a c0), (b c1)}'
+*   **DUP-ERA**: Duplicating an erasure `*` means both resulting names get the erasure. The rule `! &L{r,s} = *; K -> (r <- *; s <- *; K)` simply propagates the "erased" value to both `r` and `s` (and thus any occurrence of `r` or `s` in continuation `K` becomes `*`). `22`
+*   **DUP-LAM**: Duplicating a lambda `λx.f` is more involved. The duplication `! &L{r,s} = λx.f; K` will create two new lambdas, one for each duplicate, with fresh parameter names `x0`, `x1` and fresh body placeholders `f0`, `f1`. It then pairs the original lambda's parameter in a superposition `&L{x0,x1}` and substitutes that for `x` in the original body `f`. The original body `f` itself is duplicated (via another duplication `! &L{f0,f1} = f`) into two parts `f0` and `f1` which become the bodies of the two new lambdas. Finally `r` is substituted by `λx1.f1` in the continuation `K`. The net effect is that one lambda has been copied into two identical lambdas (with distinct bound variable names) so that each can be used separately in `K`.
+*   **DUP-SUP (labels equal)**: Duplicating a superposition when the labels match is straightforward: `! &L{x,y} = &L{a,b}; K` results in binding `x = a` and `y = b` directly. The superposition's two components are simply taken apart and assigned to `x` and `y` (so essentially the dup is canceling out a sup of the same label). Formally: it reduces to `x <- a; y <- b; K`.
+*   **DUP-SUP (labels differ)**: If a duplication's label `L` does not match the label `R` of a superposition it is duplicating, then neither can be eliminated directly; instead the rule generates two new superpositions with the lesser label interacting with the greater label. Specifically, `! &L{x,y} = &R{a,b}; K` (with `L ≠ R`) will create two new superposition nodes of the smaller label inside the continuation, and recursively duplicate the components `a` and `b`. In the rule above, fresh variables `a0,a1,b0,b1` are generated. The result splits the original `&R{a,b}` into two superpositions `&R{a0,b0}` and `&R{a1,b1}` (with the same label `R`), and sets up two duplications `! &L{a0,a1}=a` and `! &L{b0,b1}=b` to duplicate the contents `a` and `b` under label `L`. The variables `x` and `y` are then bound to those new superpositions `&R{a0,b0}` and `&R{a1,b1}` respectively. This rule is the most complex: it handles the case of mismatched labels by effectively pushing the duplicator inside the superposition, ensuring that eventually labels will match and simpler rules apply.
+
+
+
+---
+
+
+## Page 5
+
+In all the above rules, the meta-notation `x <- t` denotes a **global substitution** of term `t` for variable `x` **throughout the remaining context** 25. Because of the affine variable discipline, this substitution is guaranteed to be capture-avoiding and efficient: each variable appears at most once, so we can conceptually replace it by `t` in constant time (in practice implemented by a global substitution map) without needing to traverse or copy the whole term 26. The letter `K` in the rules stands for an arbitrary *continuation context*, meaning the rest of the term in which the rule is taking place. All rules are **contextual**: they can apply wherever their left-hand side pattern appears inside a larger term `K[..]` (the context `K` is preserved on the right-hand side) 22 24. This ensures the rewrite system is applied globally, not just at the top level. Importantly, **no combination of constructors is left without a rule**: every possible interaction of one node with another yields a defined rewrite – hence “there are no runtime errors on the Interaction Calculus” 4 (every potential redex reduces meaningfully).
+
+**Confluence and Termination:** The Interaction Calculus is designed to simulate *optimal β-reduction* (Lamping’s algorithm) and as such is confluent (every reduction sequence for a given term will reach the same result) and preserves strong normalization properties of λ-calculus where they apply 27 5. Many interactions (notably the superposition rules) allow **parallel** reduction without conflict, which is why HVM (the Higher-Order VM implementation) can achieve massive parallelism and exponential speedups on some higher-order programs 28 29. A full formal confluence proof is beyond our scope, but the absence of runtime errors and the local confluence of the interaction rules are intended to guarantee a well-defined evaluation.
+
+## Extended Numeric Interaction Rules (Optional)
+
+In the extended version of IC that includes numeric primitives (`NUM`, `SUC`, `SWI`), there are additional rewrite rules to handle those constructs 30 31. These rules allow basic arithmetic and pattern-matching on numbers to function within the rewriting system. They are not part of the minimal theoretical calculus. The numeric rules are as follows:
+
+```
++N
+--- SUC-NUM
+N+1   (where N is a numeric literal)
+
++*
+-- SUC-ERA
+*   (successor of an erased term is erased)
+
++&L{x,y}
+------- SUC-SUP
+&L{ +x , +y }   (distribute successor over superposition)
+
+?N{0: z; +: s;}
+-------- SWI-NUM (if N == 0)
+z       (if the scrutinized number N is 0, select the zero-branch)
+
+?N{0: z; +: s;}
+```
+---
+
+
+## Page 6
+
+mermaid
+graph TD
+    A[SWI-NUM (if N > 0)] --> B((s N-1) (if N is positive, decrement it and take the successor-branch))
+    B --> C{?*{0: z; +: s;}}
+    C --> D[SWI-ERA]
+    D --> E{* (switch on an erased term yields erased)}
+    E --> F{?&L{x,y}{0: z; +: s;}}
+    F --> G[SWI-SUP]
+    G --> H{!&L{z0,z1} = z;}
+    H --> I{!&L{s0,s1} = s;}
+    I --> J{&L{ ?x{0: z0; +: s0;} , ?y{0: z1; +: s1;} }}
+    J --> K{! &L{x,y} = N;}
+    K --> L[K]
+```
+
+*   **SUC-NUM**: Adding 1 to a numeric literal `N` yields the next number `N+1` 30. This treats `NUM` as a Peano numeral (where `+N` is successor).
+*   **SUC-ERA**: Adding 1 to an erased term results in an erasure `*` 32. (If the argument to successor is not actually a number – e.g. it was erased – the result is considered erased as well.)
+*   **SUC-SUP**: Adding 1 to a superposition applies the successor to both components of the superposition 33. That is, `+( &L{x,y} ) -> &L{+x, +y}`. This distributes the numeric operation across a superposed value.
+*   **SWI-NUM**: Switching on a number `N` has two cases: if `N == 0`, it returns the zero-branch `z` 31. If `N > 0` (a successor), it returns the successor-branch `s`, but with `N` decremented by 1 and passed recursively (effectively pattern-matching `N` as `SUC(N-1)` 31). These two rules implement a primitive recursion on numbers.
+*   **SWI-ERA**: Switching on an erased term produces an erased result 34 (since there is no actual number to inspect).
+*   **SWI-SUP**: Switching on a superposition `&L{x,y}` means we must switch on both components `x` and `y` in parallel 35. The rule introduces duplications for the two branch continuations `z` and `s`, then creates a superposition of the results of switching on each component: `&L{ ?x{0:z0; +:s0;} , ?y{0:z1; +:s1;} }` 35. In simpler terms, it ensures the pattern-match (`SWI`) is applied to both alternatives of the superposition, producing a superposition of outcomes.
+*   **DUP-NUM**: Duplicating a numeric literal `N` simply yields two copies of `N` for the two bound variables 36. The rule `!&L{x,y} = N; K -> (x <- N; y <- N; K)` means a number is a self-contained value that can be reused without modification in both places (since numbers are atomic constants). This is analogous to DUP-ERA, but for a numeric value instead of `*`.
+
+**Differences between Repos - Numeric Rules:** The above numeric rules are explicitly documented in the Interaction-Calculus repository 30 37 as part of its extended specification. In the HVM3 repository's IC.md, however, these rules do not appear – because HVM's core calculus definition excludes `NUM/SUC/SWI` from the foundation. Instead, HVM treats numbers and pattern matching as features of the *HVM language* built
+
+
+
+---
+
+
+## Page 7
+
+on top of IC (see **HVM.md** for the extended operational rules in that context) ¹⁶. Thus, the HVM3 spec remains a pure interaction calculus (with just λ, application, superposition, duplication, etc.), whereas Victor Taelin’s spec integrates some basic arithmetic for convenience.
+
+# Additional Notes and Comparison of Formulations
+
+*   **Affine Variables and Substitution:** Both formulations emphasize that variables are affine (used at most once) and that substitution (`x <- t`) is global ²⁵. This eliminates the need for managing variable capture or multiple occurrences – a key aspect that differentiates IC from standard λ-calculus. In practice, a global substitution map is used at runtime to implement these substitutions efficiently. The HVM implementation leverages this property to avoid traversing terms when applying substitutions, often using constant-time updates (e.g. an atomic pointer swap).
+*   **No Stuck Interactions:** A crucial theoretical guarantee in both repositories is that every possible interaction between two nodes has a reduction rule. In λ-calculus, certain combinations (like applying a pair or projecting a lambda) would be type errors or stuck terms, but in IC there is always a rewrite rule to handle it. This is seen in the presence of rules like DUP-LAM and APP-SUP which handle the “commutation” of a lambda with a duplicator and a superposition with an application, respectively, giving meaning to interactions that would be undefined in the pure λ-calculus. As stated in the documentation, “there are no runtime errors on the Interaction Calculus” – the system is designed to be total on its term language (any well-formed term reduces to a normal form). Both repositories concur on this point, making IC a robust computational model.
+*   **Extended and Implementation-Specific Rules:** The VictorTaelin/Interaction-Calculus repository includes discussion of additional rules and extensions beyond the core calculus, such as collapsing rules (ERA-LAM, ERA-APP, SUP-LAM, SUP-APP, etc., which allow converting an IC term back into a pure λ-term by eliminating unused structures) and duplication permutation rules (e.g. APP-DUP, DUP-DUP, which reorder certain redexes in an implementation). It even explores labeled lambdas as a further extension. These are mostly of interest for implementations and advanced optimization and are not part of the fundamental calculus definition. The HVM3 IC specification on GitHub focuses on the canonical core rules and does not enumerate these extra transformations in its main document. Instead, HVM3 is concerned with correctness and performance of the core interactions, delegating such optimizations to the engine internals or leaving them as notes in separate documents.
+
+In summary, the **Interaction Calculus** as presented in both repositories is formally the same calculus at its core: it consists of the syntax for λ-terms augmented with superposition/duplication nodes, and a complete set of rewrite rules (APP-ERA, APP-LAM, APP-SUP, DUP-ERA, DUP-LAM, DUP-SUP) that guarantee β-optimal reduction. The differences lie mainly in presentation and extensions: the VictorTaelin repo’s “canonical formulation” incorporates a few pragmatic extensions (like numeric literals and pattern-match constructs) directly into the calculus spec for convenience, whereas the HigherOrderCO/HVM3 repo keeps the calculus minimal in IC.md and treats those features as part of the surrounding HVM language. Both agree on the fundamental axioms and rules required to make the system self-contained and portable as a model of computation – akin to a rigorous textbook definition of an interaction-net-based λ-calculus. All necessary rules and axioms have been provided above so that this presentation is self-contained: any well-formed IC term can be reduced to normal form by repeatedly applying the given interactions, with no additional rules needed and no risk of getting stuck.
